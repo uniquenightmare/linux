@@ -1,0 +1,130 @@
+#include<pthread.h>
+#include<iostream>
+#include<stdio.h>
+#include<queue>
+#include<unistd.h>
+
+#define THREADCOUNT 4
+typedef void* (*Handler_t)(int);
+class ThreadTask
+{
+  public:
+    ThreadTask(int &data,Handler_t hander)
+      :_data(data)
+       ,_hander(hander)
+    {
+      
+    }
+    ~ThreadTask()
+    {
+      //
+    }
+    //使用函数处理数据
+    void Run()
+    {
+      _hander(_data);
+    }
+  private:
+    int _data;
+    Handler_t _hander;
+};
+class ThreadPool
+{
+  public:
+    ThreadPool()
+    {
+      _Capacity = 10;
+      _thread_capacity = THREADCOUNT;
+      pthread_cond_init(&_cond,NULL);
+      pthread_mutex_init(&_lock,NULL);
+      bool Is_create = ThreadCreat();
+      if(!Is_create)
+      {
+        printf("ThreadPool create thread falied\n");
+        exit(1);
+      }
+    }
+    ~ThreadPool()
+    {
+      
+    }
+    bool push(ThreadTask* tt)
+    {
+      pthread_mutex_lock(&_lock);
+      _que.push(tt);
+      pthread_mutex_unlock(&_lock);
+      pthread_cond_signal(&_cond);
+      return true;
+    }
+    bool pop(ThreadTask** tt)
+    {
+
+      *tt = _que.front();
+      _que.pop();
+      return true;
+    }
+    void ThreadJoin()
+    {
+      for(int i = 0;i < THREADCOUNT;i++)
+      {
+        pthread_join(tid[i],NULL);
+      }
+    }
+  private:
+    static void* ThreadStart(void* arg)
+    {
+      ThreadPool* tp = (ThreadPool*) arg;
+      while(1)
+      {
+        pthread_mutex_lock(&tp->_lock);
+        ThreadTask* tt;
+        while(tp->_que.empty())
+        {
+          pthread_cond_wait(&tp->_cond,&tp->_lock);
+        }
+        tp->pop(&tt);
+        pthread_mutex_unlock(&tp->_lock);
+        tt->Run();
+        delete tt;
+    
+      }
+    }
+    bool ThreadCreat()
+    {
+      for(int i = 0;i < THREADCOUNT;i++)
+      {
+        int ret = pthread_create(&tid[i],NULL,ThreadStart,(void*)this);
+        if(ret < 0)
+        {
+          perror("pthread_create");
+          return false;
+        }
+      }
+      return true;
+    }
+    std::queue<ThreadTask*> _que;
+    size_t _Capacity;
+    pthread_mutex_t _lock;
+    pthread_cond_t _cond;
+    size_t _thread_capacity;
+    pthread_t tid[THREADCOUNT];
+
+};
+void* DealData(int data)
+{
+    printf("consume data is %d\n", data);
+    return NULL;
+}
+int main()
+{
+  ThreadPool* tp = new ThreadPool();
+  for(int i = 0;i < 50 ;i++)
+  {
+    ThreadTask* tt = new ThreadTask(i,DealData);
+    tp->push(tt);
+  }
+  tp->ThreadJoin();
+  delete tp;
+
+  return 0;
+}
